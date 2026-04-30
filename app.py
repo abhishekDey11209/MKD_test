@@ -40,119 +40,96 @@ for col in levels:
     df = df[df[col].isin(selected)]
 
 # ================= KPI LOGIC =================
-def get_kpi_trend(df, col):
-    df_sorted = df.sort_values('TRDNG_WK_END_DT')
-    trend = df_sorted.groupby('TRDNG_WK_END_DT')[col].sum()
-
-    current = trend.iloc[-1]
-    previous = trend.iloc[-2] if len(trend) > 1 else current
-
-    change = ((current - previous) / previous * 100) if previous != 0 else 0
-    arrow = "↑" if change > 0 else "↓"
-    color = "green" if change > 0 else "red"
-
-    return current, change, arrow, color, trend.tail(20)
-
-def smart_kpi_card(title, col_name):
-    value, change, arrow, color, trend = get_kpi_trend(df, col_name)
-
-    st.markdown(f"""
-    <div style="background:#1c1f26;padding:12px;border-radius:12px;">
-        <div>{title}</div>
-        <div style="font-size:20px;font-weight:bold;">{round(value,2)}</div>
-        <div style="color:{color}">{arrow} {round(change,2)}%</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    fig = px.line(trend)
-    fig.update_layout(height=60, margin=dict(l=0,r=0,t=0,b=0),
-                      xaxis_visible=False, yaxis_visible=False)
-
-    st.plotly_chart(fig, use_container_width=True)
-
-# ================= KPI CARDS =================
+# ================= KPI SECTION =================
 st.markdown("## 📊 Performance & Insights")
 
-cols = st.columns(6)
+# -------- KPI LIST --------
 kpis = [
     ("Revenue","REVENUE"),
-    ("Sales Qty","SALES_QTY"),
-    ("SOH","SOH_QTY"),
+    ("Sold Qty","SALES_QTY"),
+    ("Current SOH","SOH_QTY"),
+    ("Intake Margin","INTAKE_MARGIN"),
     ("Margin","MARGIN"),
+    ("Margin %","MARGIN_PCT"),
+    ("ASP","ASP"),
+    ("Markdown","CURR_MD"),
     ("ROS","ROS"),
     ("Cover","COVER"),
+    ("Sell Through","SELL_THROUGH"),
+    ("OOS %","OOS_PCT"),
+    ("Stock to Sales","STOCK_TO_SALES"),
+    ("GMROI","GMROI")
 ]
 
-for col, (title, kpi) in zip(cols, kpis):
-    with col:
-        smart_kpi_card(title, kpi)
+# -------- GRID DISPLAY (AUTO WRAP) --------
+cols = st.columns(7)
 
-# ================= KPI BREAKDOWN =================
-st.markdown("## 📋 KPI Breakdown")
+for i, (title, col_name) in enumerate(kpis):
+    with cols[i % 7]:
+        smart_kpi_card(title, col_name)
 
-level = st.selectbox("Select Level", levels)
 
-kpi_table = df.groupby(level).agg({
+# ================= AUTO INSIGHTS =================
+st.markdown("## 🧠 Auto Insights")
+
+insights = []
+
+# Aggregate properly
+dept_perf = df.groupby('Department').agg({
     'REVENUE':'sum',
-    'SALES_QTY':'sum',
-    'SOH_QTY':'sum',
-    'MARGIN':'sum',
     'ROS':'mean',
     'COVER':'mean',
     'SELL_THROUGH':'mean'
 }).reset_index()
 
-st.dataframe(kpi_table, use_container_width=True)
+# Benchmarks
+ros_med = dept_perf['ROS'].median()
+cover_med = dept_perf['COVER'].median()
+rev_mean = dept_perf['REVENUE'].mean()
 
-# ================= DONUT =================
-st.markdown("## 🍩 KPI Comparison")
+# ---- Insight Logic ----
 
-kpi_map = {
-    "Revenue":"REVENUE",
-    "Quantity":"SALES_QTY",
-    "Margin":"MARGIN",
-    "ROS":"ROS",
-    "Cover":"COVER",
-    "Sell Through":"SELL_THROUGH"
-}
+# 1. Low ROS
+low_ros = dept_perf.nsmallest(3, 'ROS')
+for _, row in low_ros.iterrows():
+    insights.append(
+        f"🔻 {row['Department']} has low ROS ({round(row['ROS'],2)}) → weak demand"
+    )
 
-kpi_selected = st.selectbox("Select KPI", list(kpi_map.keys()))
-kpi_col = kpi_map[kpi_selected]
+# 2. High Cover
+high_cover = dept_perf.nlargest(3, 'COVER')
+for _, row in high_cover.iterrows():
+    insights.append(
+        f"⚠️ {row['Department']} has high Cover ({round(row['COVER'],1)} weeks) → overstock risk"
+    )
 
-period = st.selectbox("Period Type", ["Weekly","Monthly","Quarterly","Yearly"])
-n_periods = st.slider("Periods", 1, 12, 4)
+# 3. Declining Logic (SMART)
+for _, row in dept_perf.iterrows():
+    if (row['ROS'] < ros_med) and (row['COVER'] > cover_med):
+        insights.append(
+            f"🔻 {row['Department']} declining due to low ROS + high inventory"
+        )
 
-df_sorted = df.sort_values('TRDNG_WK_END_DT')
+# 4. Star Performers
+top_perf = dept_perf.nlargest(3, 'SELL_THROUGH')
+for _, row in top_perf.iterrows():
+    insights.append(
+        f"🚀 {row['Department']} strong performer (Sell Through {round(row['SELL_THROUGH'],2)})"
+    )
 
-if period == "Monthly":
-    df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT'].dt.to_period('M')
-elif period == "Quarterly":
-    df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT'].dt.to_period('Q')
-elif period == "Yearly":
-    df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT'].dt.to_period('Y')
+# 5. Revenue Drivers
+top_rev = dept_perf.nlargest(2, 'REVENUE')
+for _, row in top_rev.iterrows():
+    insights.append(
+        f"💰 {row['Department']} driving revenue ({round(row['REVENUE'],0)})"
+    )
+
+# -------- DISPLAY --------
+if insights:
+    for i in insights[:6]:
+        st.markdown(f"- {i}")
 else:
-    df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT']
-
-agg = df_sorted.groupby('TIME')[kpi_col].sum().reset_index()
-
-current = agg.tail(n_periods)[kpi_col].sum()
-previous = agg.iloc[-2*n_periods:-n_periods][kpi_col].sum()
-
-donut_df = pd.DataFrame({
-    "Period":["Current","Previous"],
-    "Value":[current,previous]
-})
-
-col1, col2 = st.columns(2)
-
-with col1:
-    fig = px.pie(donut_df, names='Period', values='Value', hole=0.6)
-    st.plotly_chart(fig, use_container_width=True)
-
-with col2:
-    change = ((current-previous)/previous*100) if previous!=0 else 0
-    st.metric("Change %", round(change,2))
-
+    st.success("All departments are performing well 🚀")
 # ================= ALERTS =================
 st.markdown("## 🚨 Alerts")
 
