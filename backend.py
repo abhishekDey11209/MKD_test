@@ -39,6 +39,9 @@ def process_data(df):
     df['MARGIN'] = df['REVENUE'] - df['COST_AED']
     df['MARGIN_PCT'] = df['MARGIN'] / df['REVENUE'].replace(0,np.nan)
 
+    # INTAKE
+    df['INTAKE_MARGIN'] = df['REG_RTL_AED'] - df['COST_AED']
+
     # SELL THROUGH
     df['SELL_THROUGH'] = df['SALES_QTY'] / (df['SALES_QTY'] + df['SOH_QTY']).replace(0,np.nan)
 
@@ -46,32 +49,12 @@ def process_data(df):
     df['ASP'] = df['REVENUE'] / df['SALES_QTY'].replace(0,np.nan)
     df['CURR_MD'] = 1 - (df['REVENUE'] / df['REG_RTL_AED'].replace(0,np.nan))
 
+    # STOCK KPIs
+    df['STOCK_TO_SALES'] = df['TOTAL_STOCK'] / df['SALES_QTY'].replace(0,np.nan)
+    df['OOS_PCT'] = (df['SOH_QTY'] == 0).astype(int)
+
+    # GMROI
+    avg_inv = df['SOH_COGS_2_AED'].mean()
+    df['GMROI'] = df['MARGIN'] / avg_inv if avg_inv != 0 else 0
+
     return df
-
-
-# ================= AUTO INSIGHTS =================
-def generate_insights(df):
-
-    insights = []
-
-    # Overstock
-    overstock = df[(df['SELL_THROUGH'] < 0.3) & (df['COVER'] > 16)]
-    if len(overstock) > 0:
-        insights.append(f"{len(overstock)} items are Overstock Risk")
-
-    # Stockout
-    stockout = df[(df['SELL_THROUGH'] > 0.6) & (df['COVER'] < 12)]
-    if len(stockout) > 0:
-        insights.append(f"{len(stockout)} items are Stockout Risk")
-
-    # Best performers
-    best = df[(df['SELL_THROUGH'] > 0.6) & (df['CURR_MD'] < 0.2)]
-    if len(best) > 0:
-        insights.append(f"{len(best)} items are Best Performers")
-
-    # Poor performers
-    poor = df[(df['SELL_THROUGH'] < 0.3) & (df['CURR_MD'] > 0.4)]
-    if len(poor) > 0:
-        insights.append(f"{len(poor)} items need markdown optimization")
-
-    return insights
