@@ -11,7 +11,6 @@ st.set_page_config(layout="wide")
 st.markdown("""
 <style>
 body { background-color: #0e1117; color: white; }
-[data-testid="stMetricValue"] { font-size: 20px; }
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
@@ -53,66 +52,109 @@ for col in levels:
     selected = st.sidebar.multiselect(col, df[col].unique(), df[col].unique())
     df = df[df[col].isin(selected)]
 
-# ================= KPI CARD FUNCTION =================
-def kpi_card(title, value, color):
-    return f"""
-    <div style="
-        background:{color};
-        padding:15px;
-        border-radius:12px;
-        text-align:center;
-        color:white;
-        font-weight:bold;
-    ">
-        <div style="font-size:14px;">{title}</div>
-        <div style="font-size:22px;">{value}</div>
-    </div>
-    """
+# ================= KPI LOGIC =================
+def get_kpi_trend(df, col):
+    df_sorted = df.sort_values('TRDNG_WK_END_DT')
+    trend = df_sorted.groupby('TRDNG_WK_END_DT')[col].sum()
 
-# ================= KPI CARDS (ADDED) =================
-kpi_html = f"""
-<div style="display:flex; gap:10px;">
-    {kpi_card("Revenue", round(df['REVENUE'].sum(),2), "#ff6b6b")}
-    {kpi_card("Sales Qty", round(df['SALES_QTY'].sum(),2), "#51cf66")}
-    {kpi_card("Margin", round(df['MARGIN'].sum(),2), "#845ef7")}
-    {kpi_card("ROS", round(df['ROS'].mean(),2), "#fcc419")}
-    {kpi_card("Cover", round(df['COVER'].mean(),2), "#339af0")}
-    {kpi_card("Sell Through", round(df['SELL_THROUGH'].mean(),2), "#20c997")}
-</div>
-"""
-st.markdown(kpi_html, unsafe_allow_html=True)
+    current = trend.tail(1).values[0]
+    previous = trend.tail(2).values[0] if len(trend) > 1 else current
+
+    change = ((current - previous) / previous * 100) if previous != 0 else 0
+    arrow = "↑" if change > 0 else "↓"
+    color = "#2f9e44" if change > 0 else "#fa5252"
+
+    return current, change, arrow, color, trend.tail(20)
+
+def smart_kpi_card(title, col_name):
+    value, change, arrow, color, trend = get_kpi_trend(df, col_name)
+
+    fig = px.line(trend)
+    fig.update_layout(
+        height=70,
+        margin=dict(l=0, r=0, t=0, b=0),
+        xaxis_visible=False,
+        yaxis_visible=False
+    )
+
+    st.markdown(f"""
+    <div style="
+        background:#1c1f26;
+        padding:12px;
+        border-radius:12px;
+        color:white;
+    ">
+        <div style="font-size:13px;">{title}</div>
+        <div style="font-size:20px; font-weight:bold;">
+            {round(value,2)}
+        </div>
+        <div style="color:{color}; font-size:12px;">
+            {arrow} {round(change,2)}%
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.plotly_chart(fig, use_container_width=True)
+
+# ================= KPI SECTION =================
+st.markdown("## 📊 Performance & Insights")
+
+# -------- ROW 1 --------
+st.markdown("### 💰 Financial Metrics")
+
+cols1 = st.columns(6)
+kpis1 = [
+    ("Revenue","REVENUE"),
+    ("Sales Qty","SALES_QTY"),
+    ("Current SOH","SOH_QTY"),
+    ("Intake Margin","INTAKE_MARGIN"),
+    ("Margin","MARGIN"),
+    ("Margin %","MARGIN_PCT"),
+]
+
+for col, (title, kpi) in zip(cols1, kpis1):
+    with col:
+        smart_kpi_card(title, kpi)
+
+# -------- ROW 2 --------
+st.markdown("### 📦 Inventory & Performance")
+
+cols2 = st.columns(6)
+kpis2 = [
+    ("ASP","ASP"),
+    ("Markdown","CURR_MD"),
+    ("ROS","ROS"),
+    ("Cover","COVER"),
+    ("Sell Through","SELL_THROUGH"),
+    ("OOS %","OOS_PCT"),
+]
+
+for col, (title, kpi) in zip(cols2, kpis2):
+    with col:
+        smart_kpi_card(title, kpi)
+
+# -------- ROW 3 --------
+st.markdown("### 📈 Efficiency Metrics")
+
+cols3 = st.columns(2)
+kpis3 = [
+    ("Stock to Sales","STOCK_TO_SALES"),
+    ("GMROI","GMROI"),
+]
+
+for col, (title, kpi) in zip(cols3, kpis3):
+    with col:
+        smart_kpi_card(title, kpi)
 
 # ================= TABS =================
 tab1, tab2, tab3 = st.tabs(["📊 Overview", "🧠 Insights", "📈 Trends"])
 
 # =========================================================
-# ================= TAB 1 : OVERVIEW =======================
+# ================= OVERVIEW ===============================
 # =========================================================
 with tab1:
 
-    st.title("📊 Retail Overview")
-
-    # (YOUR ORIGINAL KPI METRICS KEPT)
-    row1 = st.columns(8)
-    row1[0].metric("Revenue", round(df['REVENUE'].sum(),2))
-    row1[1].metric("Qty", round(df['SALES_QTY'].sum(),2))
-    row1[2].metric("SOH", round(df['SOH_QTY'].sum(),2))
-    row1[3].metric("Intake", round(df['INTAKE_MARGIN'].sum(),2))
-    row1[4].metric("Margin", round(df['MARGIN'].sum(),2))
-    row1[5].metric("Margin %", round(df['MARGIN_PCT'].mean(),2))
-    row1[6].metric("ASP", round(df['ASP'].mean(),2))
-    row1[7].metric("Markdown", round(df['CURR_MD'].mean(),2))
-
-    row2 = st.columns(6)
-    row2[0].metric("ROS", round(df['ROS'].mean(),2))
-    row2[1].metric("Cover", round(df['COVER'].mean(),2))
-    row2[2].metric("Sell Through", round(df['SELL_THROUGH'].mean(),2))
-    row2[3].metric("OOS %", round(df['OOS_PCT'].mean(),2))
-    row2[4].metric("Stock/Sales", round(df['STOCK_TO_SALES'].mean(),2))
-    row2[5].metric("GMROI", round(df['GMROI'].mean(),2))
-
-    # ================= KPI TABLE =================
-    st.subheader("📋 KPI Breakdown")
+    st.markdown("## 📊 KPI Breakdown")
 
     level = st.selectbox("Select Level", levels)
 
@@ -120,91 +162,82 @@ with tab1:
         'REVENUE':'sum',
         'SALES_QTY':'sum',
         'SOH_QTY':'sum',
-        'INTAKE_MARGIN':'sum',
         'MARGIN':'sum',
-        'MARGIN_PCT':'mean',
-        'ASP':'mean',
-        'CURR_MD':'mean',
         'ROS':'mean',
-        'COVER':'mean',
-        'SELL_THROUGH':'mean',
-        'OOS_PCT':'mean'
+        'COVER':'mean'
     }).reset_index()
 
     st.dataframe(kpi, use_container_width=True)
 
     # ================= DONUT =================
-    st.subheader("🍩 KPI Comparison")
+    st.markdown("## 🍩 KPI Comparison")
 
-    kpi_map = {
-        "Revenue": "REVENUE",
-        "Quantity": "SALES_QTY",
-        "SOH": "SOH_QTY",
-        "Intake Margin": "INTAKE_MARGIN",
-        "Margin": "MARGIN",
-        "Margin %": "MARGIN_PCT",
-        "ASP": "ASP",
-        "Markdown": "CURR_MD",
-        "ROS": "ROS",
-        "Cover": "COVER",
-        "Sell Through": "SELL_THROUGH",
-        "OOS %": "OOS_PCT"
-    }
-
-    kpi_name = st.selectbox("Select KPI", list(kpi_map.keys()))
-    kpi_col = kpi_map[kpi_name]
-
-    period = st.selectbox("Period", ["Weekly","Monthly","Quarterly","Yearly"])
-    n_periods = st.slider("Periods", 1, 12, 4)
+    kpi_col = st.selectbox("Select KPI", ['REVENUE','SALES_QTY','MARGIN'])
 
     df_sorted = df.sort_values('TRDNG_WK_END_DT')
 
-    if period == "Monthly":
-        df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT'].dt.to_period('M')
-    elif period == "Quarterly":
-        df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT'].dt.to_period('Q')
-    elif period == "Yearly":
-        df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT'].dt.to_period('Y')
-    else:
-        df_sorted['TIME'] = df_sorted['TRDNG_WK_END_DT']
-
-    agg = df_sorted.groupby('TIME')[kpi_col].sum().reset_index()
-
-    current = agg.tail(n_periods)[kpi_col].sum()
-    previous = agg.iloc[-2*n_periods:-n_periods][kpi_col].sum()
+    current = df_sorted.tail(4)[kpi_col].sum()
+    previous = df_sorted.iloc[-8:-4][kpi_col].sum()
 
     donut_df = pd.DataFrame({
-        "Period": ["Current","Previous"],
-        "Value": [current,previous]
+        "Period":["Current","Previous"],
+        "Value":[current,previous]
     })
 
-    col1, col2 = st.columns(2)
-
-    with col1:
-        fig = px.pie(donut_df, names='Period', values='Value', hole=0.6)
-
-        st.markdown('<div style="background:#1c1f26;padding:15px;border-radius:12px;">', unsafe_allow_html=True)
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    with col2:
-        change = ((current - previous)/previous*100) if previous != 0 else 0
-        st.metric("Change", round(current,2), f"{round(change,2)}%")
+    fig = px.pie(donut_df, names='Period', values='Value', hole=0.6)
+    st.plotly_chart(fig, use_container_width=True)
 
     # ================= DECISION MAP =================
-    st.subheader("📍 Stock vs Demand")
+    st.markdown("## 📍 Stock vs Demand")
 
     fig2 = px.scatter(
         df.sample(min(len(df),5000)),
         x='COVER',
         y='SELL_THROUGH',
-        color='Department',
-        render_mode='svg'
+        color='Department'
     )
 
-    st.markdown('<div style="background:#1c1f26;padding:15px;border-radius:12px;">', unsafe_allow_html=True)
     st.plotly_chart(fig2, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
-# ================= INSIGHTS & TRENDS (UNCHANGED) =================
-# (kept exactly as your original code)
+# =========================================================
+# ================= INSIGHTS ===============================
+# =========================================================
+with tab2:
+
+    st.markdown("## 🚨 Alerts")
+
+    df['ALERT'] = np.select(
+        [
+            (df['SELL_THROUGH'] < 0.3) & (df['COVER'] > 16),
+            (df['SELL_THROUGH'] > 0.6) & (df['COVER'] < 12),
+            (df['SOH_QTY'] == 0)
+        ],
+        ["Overstock","Stockout","No Stock"],
+        default="Healthy"
+    )
+
+    st.bar_chart(df['ALERT'].value_counts())
+
+# =========================================================
+# ================= TRENDS ================================
+# =========================================================
+with tab3:
+
+    st.markdown("## 📈 Trends")
+
+    df['TIME'] = df['TRDNG_WK_END_DT']
+
+    metric = st.selectbox("Metric", ['REVENUE','ROS','SELL_THROUGH'])
+
+    trend = df.groupby('TIME')[metric].mean().reset_index()
+
+    fig4 = px.line(trend, x='TIME', y=metric)
+    st.plotly_chart(fig4, use_container_width=True)
+
+# ================= EXPORT =================
+st.sidebar.subheader("📤 Export")
+
+output = io.BytesIO()
+df.to_excel(output, index=False)
+
+st.sidebar.download_button("Download Report", output.getvalue(), "report.xlsx")
