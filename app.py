@@ -186,22 +186,41 @@ with tab2:
     for i in insights[:6]:
         st.markdown(f"- {i}")
 
-    # PERFORMANCE GRID
-    st.markdown("## 📊 Performance Grid")
+    # ================= PERFORMANCE GRID =================
+st.markdown("## 📊 Performance Grid")
 
-    perf = df.groupby('Sub Class').agg({
-        'CURR_MD':'mean',
-        'SELL_THROUGH':'mean',
-        'REVENUE':'sum'
-    }).reset_index()
+perf = df.groupby('Sub Class').agg({
+    'CURR_MD':'mean',
+    'SELL_THROUGH':'mean',
+    'REVENUE':'sum'
+}).reset_index()
 
+# 🔥 CLEAN DATA (IMPORTANT FIX)
+perf = perf.replace([np.inf, -np.inf], np.nan)
+perf = perf.dropna(subset=['CURR_MD','SELL_THROUGH','REVENUE'])
+
+# Ensure numeric
+perf['CURR_MD'] = pd.to_numeric(perf['CURR_MD'], errors='coerce')
+perf['SELL_THROUGH'] = pd.to_numeric(perf['SELL_THROUGH'], errors='coerce')
+perf['REVENUE'] = pd.to_numeric(perf['REVENUE'], errors='coerce')
+
+# Drop again after conversion
+perf = perf.dropna()
+
+# SAFETY: if no data
+if len(perf) == 0:
+    st.warning("No valid data available for Performance Grid")
+else:
     fig_perf = px.scatter(
-        perf, x='CURR_MD', y='SELL_THROUGH',
-        size='REVENUE', text='Sub Class',
+        perf,
+        x='CURR_MD',
+        y='SELL_THROUGH',
+        size='REVENUE',
+        text='Sub Class',
         render_mode='svg'
     )
-    st.plotly_chart(fig_perf, use_container_width=True)
 
+    st.plotly_chart(fig_perf, use_container_width=True)
 # =========================================================
 # ================= TAB 3 : TRENDS =========================
 # =========================================================
