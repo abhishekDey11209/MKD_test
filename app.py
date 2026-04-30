@@ -9,18 +9,11 @@ st.set_page_config(layout="wide")
 
 # ================= HEADER =================
 st.markdown("""
-<div style="
-    background: linear-gradient(90deg, #1f77b4, #2ca02c);
-    padding: 20px;
-    border-radius: 12px;
-    color: white;
-    text-align: center;
-    font-size: 28px;
-    font-weight: bold;
-">
-    📊 RETAIL SALES OVERVIEW
-</div>
-<br>
+<div style="background: linear-gradient(90deg, #1f77b4, #2ca02c);
+padding: 20px;border-radius: 12px;color: white;text-align: center;
+font-size: 28px;font-weight: bold;">
+📊 RETAIL SALES OVERVIEW
+</div><br>
 """, unsafe_allow_html=True)
 
 # ================= LOAD =================
@@ -39,173 +32,189 @@ for col in levels:
     selected = st.sidebar.multiselect(col, df[col].unique(), df[col].unique())
     df = df[df[col].isin(selected)]
 
-# ================= KPI LOGIC =================
-# ================= KPI SECTION =================
-st.markdown("## 📊 Performance & Insights")
+# ================= KPI FUNCTIONS =================
+def get_kpi_trend(df, col):
+    trend = df.sort_values('TRDNG_WK_END_DT').groupby('TRDNG_WK_END_DT')[col].sum()
+    current = trend.iloc[-1]
+    previous = trend.iloc[-2] if len(trend) > 1 else current
+    change = ((current - previous) / previous * 100) if previous != 0 else 0
+    arrow = "↑" if change > 0 else "↓"
+    color = "#2f9e44" if change > 0 else "#fa5252"
+    return current, change, arrow, color, trend.tail(20)
 
-# -------- KPI LIST --------
-kpis = [
-    ("Revenue","REVENUE"),
-    ("Sold Qty","SALES_QTY"),
-    ("Current SOH","SOH_QTY"),
-    ("Intake Margin","INTAKE_MARGIN"),
-    ("Margin","MARGIN"),
-    ("Margin %","MARGIN_PCT"),
-    ("ASP","ASP"),
-    ("Markdown","CURR_MD"),
-    ("ROS","ROS"),
-    ("Cover","COVER"),
-    ("Sell Through","SELL_THROUGH"),
-    ("OOS %","OOS_PCT"),
-    ("Stock to Sales","STOCK_TO_SALES"),
-    ("GMROI","GMROI")
-]
+def smart_kpi_card(title, col_name):
+    value, change, arrow, color, trend = get_kpi_trend(df, col_name)
 
-# -------- GRID DISPLAY (AUTO WRAP) --------
-cols = st.columns(7)
+    st.markdown(f"""
+    <div style="background:#1c1f26;padding:12px;border-radius:12px;color:white;">
+        <div style="font-size:13px;">{title}</div>
+        <div style="font-size:20px;font-weight:bold;">{round(value,2)}</div>
+        <div style="color:{color};font-size:12px;">{arrow} {round(change,2)}%</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-for i, (title, col_name) in enumerate(kpis):
-    with cols[i % 7]:
-        smart_kpi_card(title, col_name)
+    fig = px.line(trend)
+    fig.update_layout(height=60, margin=dict(l=0,r=0,t=0,b=0),
+                      xaxis_visible=False, yaxis_visible=False)
+    st.plotly_chart(fig, use_container_width=True)
 
+# ================= TABS =================
+tab1, tab2, tab3 = st.tabs(["📊 Overview", "🧠 Insights", "📈 Trends"])
 
-# ================= AUTO INSIGHTS =================
-st.markdown("## 🧠 Auto Insights")
+# =========================================================
+# ================= TAB 1 : OVERVIEW =======================
+# =========================================================
+with tab1:
 
-insights = []
+    st.markdown("## 📊 Performance & Insights")
 
-# Aggregate properly
-dept_perf = df.groupby('Department').agg({
-    'REVENUE':'sum',
-    'ROS':'mean',
-    'COVER':'mean',
-    'SELL_THROUGH':'mean'
-}).reset_index()
+    # KPI ROWS
+    cols1 = st.columns(6)
+    kpis1 = [
+        ("Revenue","REVENUE"),
+        ("Sales Qty","SALES_QTY"),
+        ("Current SOH","SOH_QTY"),
+        ("Intake Margin","INTAKE_MARGIN"),
+        ("Margin","MARGIN"),
+        ("Margin %","MARGIN_PCT"),
+    ]
+    for col, (title, kpi) in zip(cols1, kpis1):
+        with col:
+            smart_kpi_card(title, kpi)
 
-# Benchmarks
-ros_med = dept_perf['ROS'].median()
-cover_med = dept_perf['COVER'].median()
-rev_mean = dept_perf['REVENUE'].mean()
+    cols2 = st.columns(6)
+    kpis2 = [
+        ("ASP","ASP"),
+        ("Markdown","CURR_MD"),
+        ("ROS","ROS"),
+        ("Cover","COVER"),
+        ("Sell Through","SELL_THROUGH"),
+        ("OOS %","OOS_PCT"),
+    ]
+    for col, (title, kpi) in zip(cols2, kpis2):
+        with col:
+            smart_kpi_card(title, kpi)
 
-# ---- Insight Logic ----
+    cols3 = st.columns(2)
+    kpis3 = [
+        ("Stock to Sales","STOCK_TO_SALES"),
+        ("GMROI","GMROI"),
+    ]
+    for col, (title, kpi) in zip(cols3, kpis3):
+        with col:
+            smart_kpi_card(title, kpi)
 
-# 1. Low ROS
-low_ros = dept_perf.nsmallest(3, 'ROS')
-for _, row in low_ros.iterrows():
-    insights.append(
-        f"🔻 {row['Department']} has low ROS ({round(row['ROS'],2)}) → weak demand"
+    # KPI TABLE
+    st.markdown("## 📋 KPI Breakdown")
+    level = st.selectbox("Select Level", levels)
+
+    kpi_table = df.groupby(level).agg({
+        'REVENUE':'sum','SALES_QTY':'sum','SOH_QTY':'sum',
+        'INTAKE_MARGIN':'sum','MARGIN':'sum','MARGIN_PCT':'mean',
+        'ASP':'mean','CURR_MD':'mean','ROS':'mean','COVER':'mean',
+        'SELL_THROUGH':'mean','OOS_PCT':'mean'
+    }).reset_index()
+
+    st.dataframe(kpi_table, use_container_width=True)
+
+    # DONUT
+    st.markdown("## 🍩 KPI Comparison")
+
+    kpi_map = {"Revenue":"REVENUE","Quantity":"SALES_QTY","Margin":"MARGIN"}
+    kpi_sel = st.selectbox("KPI", list(kpi_map.keys()))
+    kpi_col = kpi_map[kpi_sel]
+
+    agg = df.groupby('TRDNG_WK_END_DT')[kpi_col].sum().reset_index()
+    current = agg.tail(4)[kpi_col].sum()
+    previous = agg.iloc[-8:-4][kpi_col].sum()
+
+    fig = px.pie(
+        pd.DataFrame({"Period":["Current","Previous"],"Value":[current,previous]}),
+        names='Period', values='Value', hole=0.6
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# =========================================================
+# ================= TAB 2 : INSIGHTS =======================
+# =========================================================
+with tab2:
+
+    st.markdown("## 🚨 Alerts")
+
+    df['ALERT'] = np.select(
+        [
+            (df['SELL_THROUGH'] < 0.3) & (df['COVER'] > 16),
+            (df['SELL_THROUGH'] > 0.6) & (df['COVER'] < 12),
+            (df['SOH_QTY'] == 0)
+        ],
+        ["Overstock","Stockout","No Stock"],
+        default="Healthy"
     )
 
-# 2. High Cover
-high_cover = dept_perf.nlargest(3, 'COVER')
-for _, row in high_cover.iterrows():
-    insights.append(
-        f"⚠️ {row['Department']} has high Cover ({round(row['COVER'],1)} weeks) → overstock risk"
-    )
+    st.bar_chart(df['ALERT'].value_counts())
 
-# 3. Declining Logic (SMART)
-for _, row in dept_perf.iterrows():
-    if (row['ROS'] < ros_med) and (row['COVER'] > cover_med):
-        insights.append(
-            f"🔻 {row['Department']} declining due to low ROS + high inventory"
-        )
+    # ================= AUTO INSIGHTS =================
+    st.markdown("## 🧠 Auto Insights")
 
-# 4. Star Performers
-top_perf = dept_perf.nlargest(3, 'SELL_THROUGH')
-for _, row in top_perf.iterrows():
-    insights.append(
-        f"🚀 {row['Department']} strong performer (Sell Through {round(row['SELL_THROUGH'],2)})"
-    )
+    insights = []
 
-# 5. Revenue Drivers
-top_rev = dept_perf.nlargest(2, 'REVENUE')
-for _, row in top_rev.iterrows():
-    insights.append(
-        f"💰 {row['Department']} driving revenue ({round(row['REVENUE'],0)})"
-    )
+    dept_perf = df.groupby('Department').agg({
+        'REVENUE':'sum',
+        'ROS':'mean',
+        'COVER':'mean',
+        'SELL_THROUGH':'mean'
+    }).reset_index()
 
-# -------- DISPLAY --------
-if insights:
+    ros_med = dept_perf['ROS'].median()
+    cover_med = dept_perf['COVER'].median()
+    st_med = dept_perf['SELL_THROUGH'].median()
+
+    for _, row in dept_perf.nsmallest(3, 'ROS').iterrows():
+        insights.append(f"🔻 {row['Department']} low ROS ({round(row['ROS'],2)})")
+
+    for _, row in dept_perf.nlargest(3, 'COVER').iterrows():
+        insights.append(f"⚠️ {row['Department']} high Cover ({round(row['COVER'],1)})")
+
+    for _, row in dept_perf.iterrows():
+        if row['ROS'] < ros_med and row['COVER'] > cover_med:
+            insights.append(f"🚨 {row['Department']} declining")
+
+    for _, row in dept_perf.iterrows():
+        if row['ROS'] > ros_med and row['SELL_THROUGH'] > st_med:
+            insights.append(f"🔥 {row['Department']} strong performer")
+
     for i in insights[:6]:
         st.markdown(f"- {i}")
-else:
-    st.success("All departments are performing well 🚀")
-# ================= ALERTS =================
-st.markdown("## 🚨 Alerts")
 
-df['ALERT'] = np.select(
-    [
-        (df['SELL_THROUGH'] < 0.3) & (df['COVER'] > 16),
-        (df['SELL_THROUGH'] > 0.6) & (df['COVER'] < 12),
-        (df['SOH_QTY'] == 0)
-    ],
-    ["Overstock Risk","Stockout Risk","No Stock"],
-    default="Healthy"
-)
+    # PERFORMANCE GRID
+    st.markdown("## 📊 Performance Grid")
 
-st.bar_chart(df['ALERT'].value_counts())
+    perf = df.groupby('Sub Class').agg({
+        'CURR_MD':'mean',
+        'SELL_THROUGH':'mean',
+        'REVENUE':'sum'
+    }).reset_index()
 
-# ================= PERFORMANCE GRID =================
-st.markdown("## 📊 Performance Grid")
+    fig_perf = px.scatter(
+        perf, x='CURR_MD', y='SELL_THROUGH',
+        size='REVENUE', text='Sub Class',
+        render_mode='svg'
+    )
+    st.plotly_chart(fig_perf, use_container_width=True)
 
-perf = df.groupby('Sub Class').agg({
-    'CURR_MD':'mean',
-    'SELL_THROUGH':'mean',
-    'REVENUE':'sum'
-}).reset_index().dropna()
+# =========================================================
+# ================= TAB 3 : TRENDS =========================
+# =========================================================
+with tab3:
 
-md = perf['CURR_MD'].median()
-st_ = perf['SELL_THROUGH'].median()
+    st.markdown("## 📈 Trends")
 
-def bucket(row):
-    if row['CURR_MD'] > md and row['SELL_THROUGH'] > st_:
-        return "Reduce MKD"
-    elif row['SELL_THROUGH'] > st_:
-        return "Best Performer"
-    elif row['CURR_MD'] > md:
-        return "Fix Strategy"
-    else:
-        return "Increase MKD"
+    metric = st.selectbox("Metric", ['REVENUE','ROS','SELL_THROUGH','CURR_MD','COVER'])
 
-perf['Bucket'] = perf.apply(bucket, axis=1)
+    trend = df.groupby('TRDNG_WK_END_DT')[metric].mean().reset_index()
 
-fig_perf = px.scatter(
-    perf,
-    x='CURR_MD',
-    y='SELL_THROUGH',
-    color='Bucket',
-    size='REVENUE',
-    text='Sub Class',
-    render_mode='svg'
-)
-
-fig_perf.add_vline(x=md)
-fig_perf.add_hline(y=st_)
-
-st.plotly_chart(fig_perf, use_container_width=True)
-
-# ================= STOCK VS DEMAND =================
-st.markdown("## 📍 Stock vs Demand")
-
-fig2 = px.scatter(
-    df.sample(min(len(df),5000)),
-    x='COVER',
-    y='SELL_THROUGH',
-    color='Department',
-    render_mode='svg'
-)
-
-st.plotly_chart(fig2, use_container_width=True)
-
-# ================= TREND =================
-st.markdown("## 📈 Trend Analysis")
-
-metric = st.selectbox("Metric", ['REVENUE','ROS','SELL_THROUGH','CURR_MD','COVER'])
-
-trend = df.groupby('TRDNG_WK_END_DT')[metric].mean().reset_index()
-
-fig = px.line(trend, x='TRDNG_WK_END_DT', y=metric)
-st.plotly_chart(fig, use_container_width=True)
+    fig = px.line(trend, x='TRDNG_WK_END_DT', y=metric)
+    st.plotly_chart(fig, use_container_width=True)
 
 # ================= EXPORT =================
 st.sidebar.subheader("📤 Export")
