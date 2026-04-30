@@ -47,9 +47,9 @@ def smart_kpi_card(title, col_name):
 
     st.markdown(f"""
     <div style="background:#1c1f26;padding:12px;border-radius:12px;color:white;">
-        <div style="font-size:13px;">{title}</div>
+        <div>{title}</div>
         <div style="font-size:20px;font-weight:bold;">{round(value,2)}</div>
-        <div style="color:{color};font-size:12px;">{arrow} {round(change,2)}%</div>
+        <div style="color:{color}">{arrow} {round(change,2)}%</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -61,14 +61,11 @@ def smart_kpi_card(title, col_name):
 # ================= TABS =================
 tab1, tab2, tab3 = st.tabs(["📊 Overview", "🧠 Insights", "📈 Trends"])
 
-# =========================================================
-# ================= TAB 1 : OVERVIEW =======================
-# =========================================================
+# ================= TAB 1 =================
 with tab1:
 
     st.markdown("## 📊 Performance & Insights")
 
-    # KPI ROWS
     cols1 = st.columns(6)
     kpis1 = [
         ("Revenue","REVENUE"),
@@ -104,39 +101,7 @@ with tab1:
         with col:
             smart_kpi_card(title, kpi)
 
-    # KPI TABLE
-    st.markdown("## 📋 KPI Breakdown")
-    level = st.selectbox("Select Level", levels)
-
-    kpi_table = df.groupby(level).agg({
-        'REVENUE':'sum','SALES_QTY':'sum','SOH_QTY':'sum',
-        'INTAKE_MARGIN':'sum','MARGIN':'sum','MARGIN_PCT':'mean',
-        'ASP':'mean','CURR_MD':'mean','ROS':'mean','COVER':'mean',
-        'SELL_THROUGH':'mean','OOS_PCT':'mean'
-    }).reset_index()
-
-    st.dataframe(kpi_table, use_container_width=True)
-
-    # DONUT
-    st.markdown("## 🍩 KPI Comparison")
-
-    kpi_map = {"Revenue":"REVENUE","Quantity":"SALES_QTY","Margin":"MARGIN"}
-    kpi_sel = st.selectbox("KPI", list(kpi_map.keys()))
-    kpi_col = kpi_map[kpi_sel]
-
-    agg = df.groupby('TRDNG_WK_END_DT')[kpi_col].sum().reset_index()
-    current = agg.tail(4)[kpi_col].sum()
-    previous = agg.iloc[-8:-4][kpi_col].sum()
-
-    fig = px.pie(
-        pd.DataFrame({"Period":["Current","Previous"],"Value":[current,previous]}),
-        names='Period', values='Value', hole=0.6
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-# =========================================================
-# ================= TAB 2 : INSIGHTS =======================
-# =========================================================
+# ================= TAB 2 =================
 with tab2:
 
     st.markdown("## 🚨 Alerts")
@@ -153,10 +118,8 @@ with tab2:
 
     st.bar_chart(df['ALERT'].value_counts())
 
-    # ================= AUTO INSIGHTS =================
+    # AUTO INSIGHTS
     st.markdown("## 🧠 Auto Insights")
-
-    insights = []
 
     dept_perf = df.groupby('Department').agg({
         'REVENUE':'sum',
@@ -165,65 +128,40 @@ with tab2:
         'SELL_THROUGH':'mean'
     }).reset_index()
 
-    ros_med = dept_perf['ROS'].median()
-    cover_med = dept_perf['COVER'].median()
-    st_med = dept_perf['SELL_THROUGH'].median()
+    insights = []
 
     for _, row in dept_perf.nsmallest(3, 'ROS').iterrows():
-        insights.append(f"🔻 {row['Department']} low ROS ({round(row['ROS'],2)})")
+        insights.append(f"🔻 {row['Department']} low ROS")
 
     for _, row in dept_perf.nlargest(3, 'COVER').iterrows():
-        insights.append(f"⚠️ {row['Department']} high Cover ({round(row['COVER'],1)})")
-
-    for _, row in dept_perf.iterrows():
-        if row['ROS'] < ros_med and row['COVER'] > cover_med:
-            insights.append(f"🚨 {row['Department']} declining")
-
-    for _, row in dept_perf.iterrows():
-        if row['ROS'] > ros_med and row['SELL_THROUGH'] > st_med:
-            insights.append(f"🔥 {row['Department']} strong performer")
+        insights.append(f"⚠️ {row['Department']} high Cover")
 
     for i in insights[:6]:
         st.markdown(f"- {i}")
 
-    # ================= PERFORMANCE GRID =================
-st.markdown("## 📊 Performance Grid")
+    # ================= PERFORMANCE GRID (FIXED) =================
+    st.markdown("## 📊 Performance Grid")
 
-perf = df.groupby('Sub Class').agg({
-    'CURR_MD':'mean',
-    'SELL_THROUGH':'mean',
-    'REVENUE':'sum'
-}).reset_index()
+    perf = df.groupby('Sub Class').agg({
+        'CURR_MD':'mean',
+        'SELL_THROUGH':'mean',
+        'REVENUE':'sum'
+    }).reset_index()
 
-# 🔥 CLEAN DATA (IMPORTANT FIX)
-perf = perf.replace([np.inf, -np.inf], np.nan)
-perf = perf.dropna(subset=['CURR_MD','SELL_THROUGH','REVENUE'])
+    perf = perf.replace([np.inf, -np.inf], np.nan).dropna()
 
-# Ensure numeric
-perf['CURR_MD'] = pd.to_numeric(perf['CURR_MD'], errors='coerce')
-perf['SELL_THROUGH'] = pd.to_numeric(perf['SELL_THROUGH'], errors='coerce')
-perf['REVENUE'] = pd.to_numeric(perf['REVENUE'], errors='coerce')
+    if len(perf) > 0:
+        fig_perf = px.scatter(
+            perf,
+            x='CURR_MD',
+            y='SELL_THROUGH',
+            size='REVENUE',
+            text='Sub Class',
+            render_mode='svg'
+        )
+        st.plotly_chart(fig_perf, use_container_width=True)
 
-# Drop again after conversion
-perf = perf.dropna()
-
-# SAFETY: if no data
-if len(perf) == 0:
-    st.warning("No valid data available for Performance Grid")
-else:
-    fig_perf = px.scatter(
-        perf,
-        x='CURR_MD',
-        y='SELL_THROUGH',
-        size='REVENUE',
-        text='Sub Class',
-        render_mode='svg'
-    )
-
-    st.plotly_chart(fig_perf, use_container_width=True)
-# =========================================================
-# ================= TAB 3 : TRENDS =========================
-# =========================================================
+# ================= TAB 3 =================
 with tab3:
 
     st.markdown("## 📈 Trends")
@@ -232,8 +170,8 @@ with tab3:
 
     trend = df.groupby('TRDNG_WK_END_DT')[metric].mean().reset_index()
 
-    fig = px.line(trend, x='TRDNG_WK_END_DT', y=metric)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(px.line(trend, x='TRDNG_WK_END_DT', y=metric),
+                    use_container_width=True)
 
 # ================= EXPORT =================
 st.sidebar.subheader("📤 Export")
